@@ -2,26 +2,84 @@
 
 #include <math.h>
 
+/*====================================*/
+/*                                    */
+/*  Constants.                        */
+/*                                    */
 #define IP_UDP_PACKAGE_SIZE 60
 
+/*====================================*/
+/*                                    */
+/*  Structures.                       */
+/*                                    */
+struct UdpPseudoHeader {
+  uint32_t ip_s;
+  uint32_t ip_d;
+  uint8_t nulls;
+  uint8_t protocol;
+  uint16_t udp_l; 
+};
+
+struct UdpHeader {
+  uint16_t port_s;
+  uint16_t port_d;
+  uint16_t length;
+  uint16_t checksum;
+};
+
+struct UdpPackage {
+  struct UdpHeader header;
+  uint8_t data[MESSAGE_SIZE];
+};
+
+/*====================================*/
+/*                                    */
+/*  Global variables.                 */
+/*                                    */
 static int sock;
 
+/*====================================*/
+/*                                    */
+/*  Functions.                        */
+/*                                    */
 void CloseSocket(void)
 {
   close(sock);
+}
+
+uint16_t CalcCheckSum(uint16_t bytes[], size_t size)
+{
+  uint32_t sum = 0;
+  while (size > 1) {
+    sum += *(uint16_t *) bytes++;
+    size -= 2;
+  }
+  if (size > 0)
+    sum += *(uint8_t *) bytes;
+  while (sum >> 16)
+    sum = (sum & 0xffff) + (sum >> 16);
+  return ~sum;
 }
 
 int main(void)
 {
   struct sockaddr_in server_address;
   socklen_t server_length;
-  char message[MESSAGE_SIZE];               /*  Udp data buffer. */
-  char udp_package[UDP_PACKAGE_SIZE];       /*  Sending package. */
-  char ip_udp_package[IP_UDP_PACKAGE_SIZE]; /*  Receiving package. */
-  uint16_t port_d,            /*  Port-destination. */
-           port_s,            /*  Port-source. */
-           package_length,    /*  Udp-package length. */
-           checksum;          /*  Udp-package checksum. */
+
+  struct UdpPseudoHeader *pseudo_header;
+  struct UdpHeader *udp_header;
+  struct UdpPackage *udp_package;
+  char *message;                   /*  Udp data buffer. */
+  
+  uint8_t ip_udp_package[IP_UDP_PACKAGE_SIZE];  /*  Receiving package. */
+  uint8_t pseudo_ip_udp_package[UDP_PACKAGE_SIZE + 12]; /*  Udp package buf. */
+
+  /*  Data initialization. */
+  pseudo_header = (struct UdpPseudoHeader *) pseudo_ip_udp_package;
+  udp_package = (struct UdpPackage *)
+                (pseudo_ip_udp_package + sizeof(struct UdpPseudoHeader));
+  udp_header = (struct UdpHeader *) udp_package;
+  message = (char *)(udp_package->data);
 
   /*  Create raw socket. */
   sock = CreateSocket(RAW_SOCK);
@@ -36,18 +94,22 @@ int main(void)
   /*  Udp package.                  */
   /*                                */
 
-  /*  Filling udp fields. */
-  port_d = htons(SERVER_PORT);
-  port_s = 10001;
-  package_length = htons(UDP_PACKAGE_SIZE);
-  checksum = 0;
-  memset(udp_package, 0, UDP_PACKAGE_SIZE);
-  
-  memcpy(udp_package, &port_s, 2);
-  memcpy(udp_package + 2, &port_d, 2);
-  memcpy(udp_package + 4, &package_length, 2);
-  memcpy(udp_package + 6, &checksum, 2);
-  memcpy(udp_package + 8, message, MESSAGE_SIZE);
+  /*  Filling pseudo header of udp package. */ 
+  pseudo_header = (struct UdpPseudoHeader *) pseudo_ip_udp_package;
+  pseudo_header->ip_s = inet_addr("192.168.2.44");
+  pseudo_header->ip_d = inet_addr("192.168.2.44");
+  pseudo_header->nulls = 0;
+  pseudo_header->protocol = 17;
+  pseudo_header->udp_l = htons(UDP_PACKAGE_SIZE);
+
+  /*  Filling udp header. */
+  udp_header->port_s = htons(SERVER_PORT + 1);
+  udp_header->port_d = htons(SERVER_PORT);
+  udp_header->length = htons(UDP_PACKAGE_SIZE);
+  udp_header->checksum = 0;
+
+  udp_header->checksum = CalcCheckSum((uint16_t *)pseudo_ip_udp_package,
+                                       UDP_PACKAGE_SIZE + 12);
 
   /*  Filling server address structure. */
   server_address.sin_family = AF_INET;
@@ -60,9 +122,10 @@ int main(void)
     exit(1);
   }
   while (1) {
-    char header_size;
-    char first_octet;
-    int udp_offset = 0;
+    uint8_t header_size;
+    uint8_t first_octet;
+    uint16_t port_d;
+    size_t udp_offset = 0;
     
     if (recvfrom(sock, ip_udp_package, IP_UDP_PACKAGE_SIZE, 0,
                  (struct sockaddr *) &server_address, &server_length) < 0) {
@@ -71,7 +134,7 @@ int main(void)
     }
 
     memcpy(&first_octet, ip_udp_package, 1); /*  Read first byte. */
-    header_size = first_octet & 15; /* 15d = 00001111b */
+    header_size = first_octet & 0xf; /* 0xf = 00001111b */
     udp_offset = (header_size > 5) ? 24 : 20; 
 
     memcpy(&port_d, ip_udp_package + udp_offset + 2, 2);
