@@ -47,3 +47,12 @@ int CreateSocket(int socket_type)
   }
   return sock;
 }
+
+/*  Check validation of ip address. */
+int IsAddressCorrect(char *ip_address)
+{
+  struct sockaddr_in net_address;
+  int result;
+  result = inet_pton(AF_INET, ip_address, &net_address);
+  return result == 1;
+}
