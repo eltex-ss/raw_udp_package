@@ -4,8 +4,6 @@ objects = server.o client.o
 
 CFLAGS = -Wall -pedantic -ansi -g
 
-LDFLAGS = -lm
-
 all : $(targets) reloc
 
 server : server.o
