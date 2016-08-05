@@ -133,11 +133,11 @@ int main(void)
       exit(1);
     }
 
-    memcpy(&first_octet, ip_udp_package, 1); /*  Read first byte. */
+    memmove(&first_octet, ip_udp_package, 1); /*  Read first byte. */
     header_size = first_octet & 0xf; /* 0xf = 00001111b */
     udp_offset = (header_size > 5) ? 24 : 20; 
 
-    memcpy(&port_d, ip_udp_package + udp_offset + 2, 2);
+    memmove(&port_d, ip_udp_package + udp_offset + 2, 2);
     port_d = ntohs(port_d);
     if (port_d == 9999) {
       sprintf(message, "%s", ip_udp_package + udp_offset + 8);
