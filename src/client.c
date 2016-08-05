@@ -61,7 +61,15 @@ uint16_t CalcCheckSum(uint16_t bytes[], size_t size)
   return ~sum;
 }
 
-int main(void)
+int IsAddressCorrect(char *ip_address)
+{
+  struct sockaddr_in net_address;
+  int result;
+  result = inet_pton(AF_INET, ip_address, &net_address);
+  return result == 1;
+}
+
+int main(int argc, char **argv)
 {
   struct sockaddr_in server_address;
   socklen_t server_length;
@@ -73,6 +81,19 @@ int main(void)
   
   uint8_t ip_udp_package[IP_UDP_PACKAGE_SIZE];  /*  Receiving package. */
   uint8_t pseudo_ip_udp_package[UDP_PACKAGE_SIZE + 12]; /*  Udp package buf. */
+
+  /*  Input data check. */
+  if (argc == 2) {
+    if (!IsAddressCorrect(argv[1])) {
+      printf("Incorrect address\n");
+      exit(1);
+    }
+  } else {
+    printf("Incorrect usage\n");
+    printf("Should be: ./client ip_destination\n");
+    printf("Example: ./client 127.0.0.1\n");
+    exit(1);
+  }
 
   /*  Data initialization. */
   pseudo_header = (struct UdpPseudoHeader *) pseudo_ip_udp_package;
@@ -97,7 +118,7 @@ int main(void)
   /*  Filling pseudo header of udp package. */ 
   pseudo_header = (struct UdpPseudoHeader *) pseudo_ip_udp_package;
   pseudo_header->ip_s = inet_addr("192.168.2.44");
-  pseudo_header->ip_d = inet_addr("192.168.2.44");
+  pseudo_header->ip_d = inet_addr(argv[1]);
   pseudo_header->nulls = 0;
   pseudo_header->protocol = 17;
   pseudo_header->udp_l = htons(UDP_PACKAGE_SIZE);
@@ -114,7 +135,7 @@ int main(void)
   /*  Filling server address structure. */
   server_address.sin_family = AF_INET;
   server_address.sin_port = htons(SERVER_PORT);
-  server_address.sin_addr.s_addr = inet_addr("192.168.2.44");
+  server_address.sin_addr.s_addr = inet_addr(argv[1]);
 
   if (sendto(sock, udp_package, UDP_PACKAGE_SIZE, 0,
              (struct sockaddr *) &server_address, server_length) < 0) {
